@@ -1,6 +1,15 @@
-import { Download, Plus, Trash2 } from 'lucide-react';
+import { Download, Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { ResearchLog } from '../../lib/types';
+import ResearchTrackingFilters from './ResearchTrackingFilters';
+import ResearchTrackingForm from './ResearchTrackingForm';
+import ResearchTrackingList from './ResearchTrackingList';
+import ResearchTrackingSummary from './ResearchTrackingSummary';
+import {
+  countUnique,
+  emptyTrackingDraft,
+  groupLogsByDayAndSession,
+} from './researchTracking';
 
 interface Props {
   logs: ResearchLog[];
@@ -12,14 +21,6 @@ interface Props {
   onExport: (format: 'csv' | 'json') => void;
 }
 
-const emptyDraft = {
-  query: '',
-  website: '',
-  url: '',
-  pageTitle: '',
-  personalNote: '',
-};
-
 export default function ResearchView({
   logs,
   onCreateLog,
@@ -27,7 +28,7 @@ export default function ResearchView({
   onClearLogs,
   onExport,
 }: Props) {
-  const [draft, setDraft] = useState(emptyDraft);
+  const [draft, setDraft] = useState(emptyTrackingDraft);
   const [search, setSearch] = useState('');
   const [date, setDate] = useState('');
   const [website, setWebsite] = useState('');
@@ -48,11 +49,20 @@ export default function ResearchView({
       );
     });
   }, [date, logs, search, website]);
+  const groupedLogs = useMemo(
+    () => groupLogsByDayAndSession(filteredLogs),
+    [filteredLogs]
+  );
+  const today = new Date().toISOString().slice(0, 10);
+  const todayCount = filteredLogs.filter((log) =>
+    log.researchedAt.startsWith(today)
+  ).length;
+  const siteCount = countUnique(filteredLogs.map((log) => log.website));
 
   return (
     <main className="workspace-view">
       <header className="view-header research-header">
-        <h2>Research Log</h2>
+        <h2>Session Tracking</h2>
         <div className="view-actions">
           <button
             aria-expanded={manualEntryOpen}
@@ -69,107 +79,40 @@ export default function ResearchView({
           <button onClick={() => void onClearLogs()}>Clear</button>
         </div>
       </header>
+      <ResearchTrackingSummary
+        entryCount={filteredLogs.length}
+        todayCount={todayCount}
+        dayCount={groupedLogs.length}
+        siteCount={siteCount}
+      />
       {manualEntryOpen ? (
-        <form
-          className="research-form"
-          onSubmit={(event) => {
-            event.preventDefault();
+        <ResearchTrackingForm
+          draft={draft}
+          onDraftChange={(updates) =>
+            setDraft((current) => ({ ...current, ...updates }))
+          }
+          onSubmit={() => {
             if (!draft.query.trim() || !draft.website.trim()) return;
             void onCreateLog(draft).then(() => {
-              setDraft(emptyDraft);
+              setDraft(emptyTrackingDraft);
               setManualEntryOpen(false);
             });
           }}
-        >
-          <input
-            aria-label="Research keyword"
-            placeholder="Keyword or page title"
-            value={draft.query}
-            onChange={(event) =>
-              setDraft({ ...draft, query: event.target.value })
-            }
-          />
-          <input
-            aria-label="Research website"
-            placeholder="Website"
-            value={draft.website}
-            onChange={(event) =>
-              setDraft({ ...draft, website: event.target.value })
-            }
-          />
-          <input
-            aria-label="Research URL"
-            placeholder="URL"
-            value={draft.url}
-            onChange={(event) =>
-              setDraft({ ...draft, url: event.target.value })
-            }
-          />
-          <input
-            aria-label="Research page title"
-            placeholder="Page title"
-            value={draft.pageTitle}
-            onChange={(event) =>
-              setDraft({ ...draft, pageTitle: event.target.value })
-            }
-          />
-          <textarea
-            aria-label="Research personal note"
-            placeholder="Personal note"
-            value={draft.personalNote}
-            onChange={(event) =>
-              setDraft({ ...draft, personalNote: event.target.value })
-            }
-          />
-          <button aria-label="Add research log">
-            <Plus size={16} />
-          </button>
-        </form>
+        />
       ) : null}
-      <div className="research-filters">
-        <input
-          aria-label="Search research logs"
-          placeholder="Search logs"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <input
-          aria-label="Filter research by date"
-          type="date"
-          value={date}
-          onChange={(event) => setDate(event.target.value)}
-        />
-        <select
-          aria-label="Filter research by website"
-          value={website}
-          onChange={(event) => setWebsite(event.target.value)}
-        >
-          <option value="">All websites</option>
-          {websites.map((value) => (
-            <option key={value} value={value}>
-              {value}
-            </option>
-          ))}
-        </select>
-      </div>
-      <ul className="research-list">
-        {filteredLogs.map((log) => (
-          <li key={log.id}>
-            <strong>{log.query}</strong>
-            <span>{log.website}</span>
-            <span>{log.pageTitle || log.url || '-'}</span>
-            <time>{new Date(log.researchedAt).toLocaleString()}</time>
-            {log.personalNote ? <p>{log.personalNote}</p> : null}
-            <button
-              className="icon-button compact"
-              onClick={() => void onDeleteLog(log.id)}
-              aria-label={`Delete research ${log.query}`}
-            >
-              <Trash2 size={15} />
-            </button>
-          </li>
-        ))}
-      </ul>
+      <ResearchTrackingFilters
+        search={search}
+        date={date}
+        website={website}
+        websites={websites}
+        onSearchChange={setSearch}
+        onDateChange={setDate}
+        onWebsiteChange={setWebsite}
+      />
+      <ResearchTrackingList
+        groupedLogs={groupedLogs}
+        onDeleteLog={onDeleteLog}
+      />
     </main>
   );
 }
